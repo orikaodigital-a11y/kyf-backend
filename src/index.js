@@ -5,6 +5,9 @@ const cors = require("cors");
 
 const authRoutes = require("./routes/auth");
 const professorRoutes = require("./routes/professors");
+const discoverRoutes = require("./routes/discover");
+const matchesRoutes = require("./routes/matches");
+const feedRoutes = require("./routes/feed");
 
 const app = express();
 app.use(cors()); // lets the app (running on a different address) talk to this server
@@ -17,6 +20,9 @@ app.get("/health", (req, res) => {
 
 app.use("/auth", authRoutes);
 app.use("/professors", professorRoutes);
+app.use("/discover", discoverRoutes);
+app.use("/matches", matchesRoutes);
+app.use("/feed", feedRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

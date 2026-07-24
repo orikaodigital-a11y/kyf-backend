@@ -125,3 +125,16 @@ router.post("/", async (req, res) => {
 });
 
 module.exports = router;
+// GET /feed/:professor_id — fetch a professor's own posts
+router.get("/:professor_id", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT id, content, created_at FROM posts WHERE professor_id = $1 ORDER BY created_at DESC",
+      [req.params.professor_id]
+    );
+    res.json({ posts: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong." });
+  }
+});

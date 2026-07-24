@@ -24,6 +24,16 @@ const blockedDomains = [
   "pornhub.com", "xvideos.com", "xnxx.com", "redtube.com",
   "bet365.com", "onlinecasino.com"
 ];
+function containsContactInfo(text) {
+  // Matches email addresses
+  const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/;
+  // Matches Indian phone numbers: optional +91, optional spaces/dashes, 10 digits
+  const phoneRegex = /(\+91[\-\s]?)?[6-9]\d{9}\b/;
+  // Also catches numbers written with spaces/dashes like 98765 43210 or 98765-43210
+  const spacedPhoneRegex = /\b[6-9]\d{2,4}[\-\s]\d{2,4}[\-\s]?\d{0,4}\b/;
+
+  return emailRegex.test(text) || phoneRegex.test(text) || spacedPhoneRegex.test(text);
+}
 
 function extractUrls(text) {
   const urlRegex = /(https?:\/\/[^\s]+)/g;
@@ -88,10 +98,16 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 4. Block harmful content — words or bad URLs
+   // 4. Block harmful content — words, bad URLs, or contact info
     if (containsBannedContent(content) || containsBadUrl(content)) {
       return res.status(400).json({
         error: "This content violates our community guidelines and cannot be posted.",
+      });
+    }
+
+    if (containsContactInfo(content)) {
+      return res.status(400).json({
+        error: "Sharing phone numbers or email addresses in the feed isn't allowed. Please connect through Matches instead.",
       });
     }
 

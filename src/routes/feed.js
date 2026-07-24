@@ -14,6 +14,31 @@ const bannedWords = [
   "porn", "sex video", "nude", "rape", "murder", "kill", "terrorist",
   "bomb", "drugs", "escort", "gambling"
 ];
+// URL shorteners are blocked outright — they hide the real destination
+const blockedShorteners = [
+  "bit.ly", "tinyurl.com", "goo.gl", "t.co", "ow.ly", "is.gd", "buff.ly"
+];
+
+// Known harmful domain patterns — expand this list as needed
+const blockedDomains = [
+  "pornhub.com", "xvideos.com", "xnxx.com", "redtube.com",
+  "bet365.com", "onlinecasino.com"
+];
+
+function extractUrls(text) {
+  const urlRegex = /(https?:\/\/[^\s]+)/g;
+  return text.match(urlRegex) || [];
+}
+
+function containsBadUrl(text) {
+  const urls = extractUrls(text);
+  for (const url of urls) {
+    const lower = url.toLowerCase();
+    if (blockedShorteners.some((d) => lower.includes(d))) return true;
+    if (blockedDomains.some((d) => lower.includes(d))) return true;
+  }
+  return false;
+}
 
 function containsBannedContent(text) {
   const lower = text.toLowerCase();
@@ -63,8 +88,8 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 4. Block harmful content
-    if (containsBannedContent(content)) {
+    // 4. Block harmful content — words or bad URLs
+    if (containsBannedContent(content) || containsBadUrl(content)) {
       return res.status(400).json({
         error: "This content violates our community guidelines and cannot be posted.",
       });

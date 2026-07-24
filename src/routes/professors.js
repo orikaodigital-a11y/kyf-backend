@@ -23,4 +23,22 @@ router.get("/me", requireAuth, async (req, res) => {
   }
 });
 
+// GET /professors/:id/status — public check, just verification status
+// (Temporary: once real login sessions exist, use /me instead)
+router.get("/:id/status", async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT email_verified FROM professors WHERE id = $1",
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Profile not found." });
+    }
+    res.json({ verified: result.rows[0].email_verified });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong." });
+  }
+});
+
 module.exports = router;

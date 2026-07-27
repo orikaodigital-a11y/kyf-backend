@@ -22,6 +22,28 @@ router.get("/me", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Something went wrong fetching your profile." });
   }
 });
+// PUT /professors/me — update your own bio, tags, and seeking.
+// Only these three fields can be changed here for now.
+router.put("/me", requireAuth, async (req, res) => {
+  const { bio, tags, seeking } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE professors
+       SET bio = $1, tags = $2, seeking = $3
+       WHERE id = $4
+       RETURNING id, name, university, department, category, username, email_verified, bio, tags, seeking, title, photo_url`,
+      [bio, tags, seeking, req.professorId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Profile not found." });
+    }
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong updating your profile." });
+  }
+});
 
 // GET /professors/:id/status — public check, just verification status
 // (Temporary: once real login sessions exist, use /me instead)

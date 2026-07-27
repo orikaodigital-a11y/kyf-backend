@@ -18,6 +18,9 @@ router.get("/", requireAuth, async (req, res) => {
          AND id NOT IN (
            SELECT to_professor_id FROM likes WHERE from_professor_id = $1
          )
+         AND id NOT IN (
+           SELECT passed_professor_id FROM passes WHERE professor_id = $1
+         )
        ORDER BY created_at DESC
        LIMIT 20`,
       [req.professorId]
@@ -76,6 +79,30 @@ router.post("/like/:professorId", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Something went wrong sending that like." });
   } finally {
     client.release();
+  }
+});
+
+// POST /discover/pass/:professorId — pass on someone so they don't show up
+// in your Discover deck again.
+router.post("/pass/:professorId", requireAuth, async (req, res) => {
+  const fromId = req.professorId;
+  const toId = req.params.professorId;
+
+  if (fromId === toId) {
+    return res.status(400).json({ error: "You can't pass on your own profile." });
+  }
+
+  try {
+    await pool.query(
+      `INSERT INTO passes (professor_id, passed_professor_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [fromId, toId]
+    );
+    res.json({ passed: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong recording that pass." });
   }
 });
 

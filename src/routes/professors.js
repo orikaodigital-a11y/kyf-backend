@@ -46,7 +46,7 @@ router.get("/:id/status", async (req, res) => {
 router.get("/:id", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id, name, university, department, category, username, email_verified FROM professors WHERE id = $1",
+      "SELECT id, name, university, department, category, username, email_verified, bio, tags, seeking, title, photo_url FROM professors WHERE id = $1",
       [req.params.id]
     );
     if (result.rows.length === 0) {

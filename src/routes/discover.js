@@ -105,5 +105,27 @@ router.post("/pass/:professorId", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Something went wrong recording that pass." });
   }
 });
+// GET /discover/interested — people who liked you but you haven't liked back yet
+// (once you like them back, they move to Matches instead of showing here)
+router.get("/interested", requireAuth, async (req, res) => {
+  const myId = req.professorId;
 
+  try {
+    const result = await pool.query(
+      `SELECT p.id, p.name, p.title, p.university, p.department, p.category, p.tags, p.seeking, p.bio, p.photo_url
+       FROM professors p
+       JOIN likes l ON l.from_professor_id = p.id
+       WHERE l.to_professor_id = $1
+         AND p.id NOT IN (
+           SELECT to_professor_id FROM likes WHERE from_professor_id = $1
+         )
+       ORDER BY l.created_at DESC`,
+      [myId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading interested profiles." });
+  }
+});
 module.exports = router;

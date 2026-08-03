@@ -47,6 +47,33 @@ router.put("/me", requireAuth, async (req, res) => {
   }
 });
 
+// GET /professors/search?q= — name, university, department, or tag match.
+router.get("/search", requireAuth, async (req, res) => {
+  const q = (req.query.q || "").trim();
+  if (!q) return res.json([]);
+
+  try {
+    const result = await pool.query(
+      `SELECT id, name, title, university, department, category, tags, email_verified, photo_url
+       FROM professors
+       WHERE id != $2
+         AND (
+           name ILIKE $1
+           OR university ILIKE $1
+           OR department ILIKE $1
+           OR EXISTS (SELECT 1 FROM unnest(tags) t WHERE t ILIKE $1)
+         )
+       ORDER BY name ASC
+       LIMIT 20`,
+      [`%${q}%`, req.professorId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong searching." });
+  }
+});
+
 // GET /professors/:id/status — public check, just verification status
 // (Temporary: once real login sessions exist, use /me instead)
 router.get("/:id/status", async (req, res) => {

@@ -9,6 +9,38 @@ const router = express.Router();
 
 const PRIORITY_CONNECT_PRICE_PAISE = 3000; // ₹30, mirrors the prototype's Priority Connect price
 
+// Haversine distance in km, computed in SQL. Only ever returned when BOTH
+// sides have location sharing on - never exposes anyone's raw lat/lng to
+// another user, only an approximate distance (matches the prototype's
+// privacy behavior).
+const DISTANCE_KM_EXPR = `
+  CASE
+    WHEN $2::double precision IS NOT NULL AND $3::double precision IS NOT NULL
+     AND p.location_enabled AND p.lat IS NOT NULL AND p.lng IS NOT NULL
+    THEN round((
+      6371 * acos(
+        LEAST(1, GREATEST(-1,
+          cos(radians($2::double precision)) * cos(radians(p.lat)) * cos(radians(p.lng) - radians($3::double precision))
+          + sin(radians($2::double precision)) * sin(radians(p.lat))
+        ))
+      )
+    )::numeric, 1)
+    ELSE NULL
+  END AS distance_km
+`;
+
+async function getMyLocation(professorId) {
+  const result = await pool.query(
+    "SELECT location_enabled, lat, lng FROM professors WHERE id = $1",
+    [professorId]
+  );
+  const me = result.rows[0];
+  if (!me || !me.location_enabled || me.lat == null || me.lng == null) {
+    return { lat: null, lng: null };
+  }
+  return { lat: me.lat, lng: me.lng };
+}
+
 // Records a like from -> to and creates a match if the other person already liked back.
 // Shared by the free Like button and the paid Priority Connect action.
 async function likeAndMaybeMatch(fromId, toId) {
@@ -51,24 +83,26 @@ async function likeAndMaybeMatch(fromId, toId) {
 // once basic browsing works end to end.
 router.get("/", requireAuth, async (req, res) => {
   try {
+    const myLoc = await getMyLocation(req.professorId);
     const result = await pool.query(
-      `SELECT id, name, title, university, department, category, tags, seeking, bio, photo_url, email_verified
-       FROM professors
-       WHERE id != $1
-         AND id NOT IN (
+      `SELECT p.id, p.name, p.title, p.university, p.department, p.category, p.tags, p.seeking, p.bio, p.photo_url, p.email_verified,
+              ${DISTANCE_KM_EXPR}
+       FROM professors p
+       WHERE p.id != $1
+         AND p.id NOT IN (
            SELECT to_professor_id FROM likes WHERE from_professor_id = $1
          )
-         AND id NOT IN (
+         AND p.id NOT IN (
            SELECT passed_professor_id FROM passes WHERE professor_id = $1
          )
-         AND id NOT IN (
+         AND p.id NOT IN (
            SELECT blocked_id FROM blocks WHERE blocker_id = $1
            UNION
            SELECT blocker_id FROM blocks WHERE blocked_id = $1
          )
-       ORDER BY created_at DESC
+       ORDER BY p.created_at DESC
        LIMIT 20`,
-      [req.professorId]
+      [req.professorId, myLoc.lat, myLoc.lng]
     );
     res.json(result.rows);
   } catch (err) {
@@ -160,8 +194,10 @@ router.get("/interested", requireAuth, async (req, res) => {
   const myId = req.professorId;
 
   try {
+    const myLoc = await getMyLocation(myId);
     const result = await pool.query(
-      `SELECT p.id, p.name, p.title, p.university, p.department, p.category, p.tags, p.seeking, p.bio, p.photo_url, p.email_verified
+      `SELECT p.id, p.name, p.title, p.university, p.department, p.category, p.tags, p.seeking, p.bio, p.photo_url, p.email_verified,
+              ${DISTANCE_KM_EXPR}
        FROM professors p
        JOIN likes l ON l.from_professor_id = p.id
        WHERE l.to_professor_id = $1
@@ -169,7 +205,7 @@ router.get("/interested", requireAuth, async (req, res) => {
            SELECT to_professor_id FROM likes WHERE from_professor_id = $1
          )
        ORDER BY l.created_at DESC`,
-      [myId]
+      [myId, myLoc.lat, myLoc.lng]
     );
     res.json(result.rows);
   } catch (err) {

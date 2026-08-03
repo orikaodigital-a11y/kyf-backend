@@ -134,6 +134,24 @@ router.delete("/me/showcases/:id", requireAuth, async (req, res) => {
   }
 });
 
+// PUT /professors/me/location — Body: { enabled, lat, lng }
+// lat/lng are optional when enabled=false (turning location off).
+router.put("/me/location", requireAuth, async (req, res) => {
+  const { enabled, lat, lng } = req.body;
+  try {
+    const result = await pool.query(
+      `UPDATE professors SET location_enabled = $1, lat = $2, lng = $3
+       WHERE id = $4
+       RETURNING location_enabled, lat, lng`,
+      [!!enabled, enabled ? lat : null, enabled ? lng : null, req.professorId]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong updating your location." });
+  }
+});
+
 function isValidOrcidFormat(id) {
   return /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(id.trim());
 }

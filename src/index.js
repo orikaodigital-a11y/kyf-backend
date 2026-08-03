@@ -14,6 +14,7 @@ const opportunitiesRoutes = require("./routes/opportunities");
 const supportRoutes = require("./routes/support");
 const reportsRoutes = require("./routes/reports");
 const blocksRoutes = require("./routes/blocks");
+const sponsoredAdsRoutes = require("./routes/sponsoredAds");
 
 const app = express();
 app.use(cors()); // lets the app (running on a different address) talk to this server
@@ -35,6 +36,7 @@ app.use("/opportunities", opportunitiesRoutes);
 app.use("/support", supportRoutes);
 app.use("/reports", reportsRoutes);
 app.use("/blocks", blocksRoutes);
+app.use("/sponsored-ads", sponsoredAdsRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

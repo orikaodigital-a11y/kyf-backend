@@ -3,8 +3,11 @@
 const express = require("express");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
+const { chargeWallet } = require("../lib/payments");
 
 const router = express.Router();
+
+const FEATURED_PRICE_PAISE = 19900; // ₹199/month, mirrors the prototype's price
 
 // GET /professors/me  — requires a valid login token
 router.get("/me", requireAuth, async (req, res) => {
@@ -12,7 +15,8 @@ router.get("/me", requireAuth, async (req, res) => {
     const result = await pool.query(
       `SELECT id, name, university, department, category, email, username, email_verified,
               wallet_balance_paise, bio, tags, seeking, title, photo_url,
-              orcid_id, orcid_verified, publications_count, h_index
+              orcid_id, orcid_verified, publications_count, h_index,
+              featured_active, featured_expires_at
        FROM professors WHERE id = $1`,
       [req.professorId]
     );
@@ -45,6 +49,88 @@ router.put("/me", requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong updating your profile." });
+  }
+});
+
+// POST /professors/me/featured — activate Featured Profile for 30 days, paid.
+router.post("/me/featured", requireAuth, async (req, res) => {
+  try {
+    try {
+      await chargeWallet(req.professorId, FEATURED_PRICE_PAISE, "featured_profile", "Featured Profile - 30 days");
+    } catch (err) {
+      if (err.code === "INSUFFICIENT_FUNDS") {
+        return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });
+      }
+      throw err;
+    }
+    const result = await pool.query(
+      `UPDATE professors
+       SET featured_active = true, featured_expires_at = now() + interval '30 days'
+       WHERE id = $1
+       RETURNING featured_active, featured_expires_at`,
+      [req.professorId]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong activating Featured Profile." });
+  }
+});
+
+// GET /professors/me/showcases
+router.get("/me/showcases", requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "SELECT * FROM feature_showcases WHERE professor_id = $1 ORDER BY created_at ASC",
+      [req.professorId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading your showcases." });
+  }
+});
+
+// POST /professors/me/showcases — Body: { title, link }. Max 2, Featured Profile required.
+router.post("/me/showcases", requireAuth, async (req, res) => {
+  const { title, link } = req.body;
+  if (!title) {
+    return res.status(400).json({ error: "A title is required." });
+  }
+  try {
+    const prof = await pool.query("SELECT featured_active FROM professors WHERE id = $1", [req.professorId]);
+    if (!prof.rows[0]?.featured_active) {
+      return res.status(403).json({ error: "Showcases require an active Featured Profile." });
+    }
+    const existing = await pool.query("SELECT id FROM feature_showcases WHERE professor_id = $1", [req.professorId]);
+    if (existing.rows.length >= 2) {
+      return res.status(400).json({ error: "You can only have 2 showcases at a time - remove one first." });
+    }
+    const result = await pool.query(
+      "INSERT INTO feature_showcases (professor_id, title, link) VALUES ($1, $2, $3) RETURNING *",
+      [req.professorId, title, link || null]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong adding that showcase." });
+  }
+});
+
+// DELETE /professors/me/showcases/:id
+router.delete("/me/showcases/:id", requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      "DELETE FROM feature_showcases WHERE id = $1 AND professor_id = $2 RETURNING id",
+      [req.params.id, req.professorId]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Showcase not found." });
+    }
+    res.json({ deleted: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong removing that showcase." });
   }
 });
 

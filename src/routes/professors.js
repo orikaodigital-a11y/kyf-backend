@@ -11,7 +11,8 @@ router.get("/me", requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, name, university, department, category, email, username, email_verified,
-              wallet_balance_paise, bio, tags, seeking, title, photo_url
+              wallet_balance_paise, bio, tags, seeking, title, photo_url,
+              orcid_id, orcid_verified, publications_count, h_index
        FROM professors WHERE id = $1`,
       [req.professorId]
     );
@@ -44,6 +45,43 @@ router.put("/me", requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong updating your profile." });
+  }
+});
+
+function isValidOrcidFormat(id) {
+  return /^\d{4}-\d{4}-\d{4}-\d{3}[\dX]$/.test(id.trim());
+}
+
+// POST /professors/me/orcid-sync — Body: { orcidId }
+// Calls ORCID's public API server-side (the browser can't - pub.orcid.org
+// doesn't send CORS headers) and stores the verified works count.
+router.post("/me/orcid-sync", requireAuth, async (req, res) => {
+  const orcidId = (req.body.orcidId || "").trim();
+  if (!isValidOrcidFormat(orcidId)) {
+    return res.status(400).json({ error: "That doesn't look like a valid ORCID iD (format: 0000-0000-0000-0000)." });
+  }
+
+  try {
+    const orcidRes = await fetch(`https://pub.orcid.org/v3.0/${orcidId}/works`, {
+      headers: { Accept: "application/json" },
+    });
+    if (!orcidRes.ok) {
+      return res.status(404).json({ error: "Couldn't find that ORCID iD. Double-check it and try again." });
+    }
+    const data = await orcidRes.json();
+    const works = Array.isArray(data.group) ? data.group.length : 0;
+
+    const result = await pool.query(
+      `UPDATE professors
+       SET orcid_id = $1, orcid_verified = true, publications_count = $2
+       WHERE id = $3
+       RETURNING orcid_id, orcid_verified, publications_count, h_index`,
+      [orcidId, works, req.professorId]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong syncing with ORCID." });
   }
 });
 

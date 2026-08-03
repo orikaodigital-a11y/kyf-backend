@@ -10,7 +10,9 @@ const router = express.Router();
 router.get("/me", requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id, name, university, department, category, email, username, email_verified, wallet_balance_paise FROM professors WHERE id = $1",
+      `SELECT id, name, university, department, category, email, username, email_verified,
+              wallet_balance_paise, bio, tags, seeking, title, photo_url
+       FROM professors WHERE id = $1`,
       [req.professorId]
     );
     if (result.rows.length === 0) {

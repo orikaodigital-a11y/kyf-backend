@@ -9,6 +9,8 @@ const discoverRoutes = require("./routes/discover");
 const matchesRoutes = require("./routes/matches");
 const feedRoutes = require("./routes/feed");
 const messagesRoutes = require("./routes/messages");
+const walletRoutes = require("./routes/wallet");
+const opportunitiesRoutes = require("./routes/opportunities");
 
 const app = express();
 app.use(cors()); // lets the app (running on a different address) talk to this server
@@ -25,6 +27,8 @@ app.use("/discover", discoverRoutes);
 app.use("/matches", matchesRoutes);
 app.use("/feed", feedRoutes);
 app.use("/messages", messagesRoutes);
+app.use("/wallet", walletRoutes);
+app.use("/opportunities", opportunitiesRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

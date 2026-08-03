@@ -3,8 +3,48 @@
 const express = require("express");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
+const { chargeWallet } = require("../lib/payments");
 
 const router = express.Router();
+
+const PRIORITY_CONNECT_PRICE_PAISE = 3000; // ₹30, mirrors the prototype's Priority Connect price
+
+// Records a like from -> to and creates a match if the other person already liked back.
+// Shared by the free Like button and the paid Priority Connect action.
+async function likeAndMaybeMatch(fromId, toId) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO likes (from_professor_id, to_professor_id)
+       VALUES ($1, $2)
+       ON CONFLICT (from_professor_id, to_professor_id) DO NOTHING`,
+      [fromId, toId]
+    );
+    const reverseLike = await client.query(
+      "SELECT id FROM likes WHERE from_professor_id = $1 AND to_professor_id = $2",
+      [toId, fromId]
+    );
+    let matched = false;
+    if (reverseLike.rows.length > 0) {
+      const [a, b] = [fromId, toId].sort();
+      await client.query(
+        `INSERT INTO matches (professor_a_id, professor_b_id)
+         VALUES ($1, $2)
+         ON CONFLICT (professor_a_id, professor_b_id) DO NOTHING`,
+        [a, b]
+      );
+      matched = true;
+    }
+    await client.query("COMMIT");
+    return matched;
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
 
 // GET /discover — professors you haven't already liked or passed on, newest accounts first.
 // This is a simple version; we'll add Collab Score ranking as its own pass later,
@@ -42,43 +82,47 @@ router.post("/like/:professorId", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "You can't like your own profile." });
   }
 
-  const client = await pool.connect();
   try {
-    await client.query("BEGIN");
-
-    await client.query(
-      `INSERT INTO likes (from_professor_id, to_professor_id)
-       VALUES ($1, $2)
-       ON CONFLICT (from_professor_id, to_professor_id) DO NOTHING`,
-      [fromId, toId]
-    );
-
-    const reverseLike = await client.query(
-      "SELECT id FROM likes WHERE from_professor_id = $1 AND to_professor_id = $2",
-      [toId, fromId]
-    );
-
-    let matched = false;
-    if (reverseLike.rows.length > 0) {
-      // Store the pair in a consistent order so we never create the same match twice.
-      const [a, b] = [fromId, toId].sort();
-      await client.query(
-        `INSERT INTO matches (professor_a_id, professor_b_id)
-         VALUES ($1, $2)
-         ON CONFLICT (professor_a_id, professor_b_id) DO NOTHING`,
-        [a, b]
-      );
-      matched = true;
-    }
-
-    await client.query("COMMIT");
+    const matched = await likeAndMaybeMatch(fromId, toId);
     res.json({ matched });
   } catch (err) {
-    await client.query("ROLLBACK");
     console.error(err);
     res.status(500).json({ error: "Something went wrong sending that like." });
-  } finally {
-    client.release();
+  }
+});
+
+// POST /discover/priority/:professorId — paid Priority Connect: same as a like/match,
+// but charges the wallet first so it's flagged as a priority request.
+router.post("/priority/:professorId", requireAuth, async (req, res) => {
+  const fromId = req.professorId;
+  const toId = req.params.professorId;
+
+  if (fromId === toId) {
+    return res.status(400).json({ error: "You can't priority-connect with your own profile." });
+  }
+
+  try {
+    let balance;
+    try {
+      const charge = await chargeWallet(
+        fromId,
+        PRIORITY_CONNECT_PRICE_PAISE,
+        "priority_connect",
+        `Priority Connect to professor ${toId}`
+      );
+      balance = charge.balance;
+    } catch (err) {
+      if (err.code === "INSUFFICIENT_FUNDS") {
+        return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });
+      }
+      throw err;
+    }
+
+    const matched = await likeAndMaybeMatch(fromId, toId);
+    res.json({ matched, balance });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong sending that priority connect." });
   }
 });
 

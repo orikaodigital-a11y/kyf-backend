@@ -12,7 +12,7 @@ const router = express.Router();
 router.get("/", requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, title, university, department, category, tags, seeking, bio, photo_url
+      `SELECT id, name, title, university, department, category, tags, seeking, bio, photo_url, email_verified
        FROM professors
        WHERE id != $1
          AND id NOT IN (
@@ -112,7 +112,7 @@ router.get("/interested", requireAuth, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `SELECT p.id, p.name, p.title, p.university, p.department, p.category, p.tags, p.seeking, p.bio, p.photo_url
+      `SELECT p.id, p.name, p.title, p.university, p.department, p.category, p.tags, p.seeking, p.bio, p.photo_url, p.email_verified
        FROM professors p
        JOIN likes l ON l.from_professor_id = p.id
        WHERE l.to_professor_id = $1

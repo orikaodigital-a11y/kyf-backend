@@ -1,11 +1,14 @@
 // Routes for professor profile data. We start with just "get my own profile" —
 // this is the simplest possible route that proves login + tokens are working end-to-end.
 const express = require("express");
+const multer = require("multer");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
+const { uploadFile } = require("../lib/storage");
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 const FEATURED_PRICE_PAISE = 19900; // ₹199/month, mirrors the prototype's price
 
@@ -149,6 +152,34 @@ router.put("/me/location", requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong updating your location." });
+  }
+});
+
+// POST /professors/me/photo — multipart form upload, field name "photo".
+router.post("/me/photo", requireAuth, upload.single("photo"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No photo was uploaded." });
+  }
+  if (!req.file.mimetype.startsWith("image/")) {
+    return res.status(400).json({ error: "Only image files are allowed." });
+  }
+
+  try {
+    const ext = req.file.mimetype === "image/png" ? "png" : "jpg";
+    const path = `profile-photos/${req.professorId}-${Date.now()}.${ext}`;
+    const photoUrl = await uploadFile(path, req.file.buffer, req.file.mimetype);
+
+    const result = await pool.query(
+      "UPDATE professors SET photo_url = $1 WHERE id = $2 RETURNING photo_url",
+      [photoUrl, req.professorId]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    if (err.code === "STORAGE_NOT_CONFIGURED") {
+      return res.status(503).json({ error: err.message });
+    }
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong uploading your photo." });
   }
 });
 

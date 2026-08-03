@@ -61,6 +61,11 @@ router.get("/", requireAuth, async (req, res) => {
          AND id NOT IN (
            SELECT passed_professor_id FROM passes WHERE professor_id = $1
          )
+         AND id NOT IN (
+           SELECT blocked_id FROM blocks WHERE blocker_id = $1
+           UNION
+           SELECT blocker_id FROM blocks WHERE blocked_id = $1
+         )
        ORDER BY created_at DESC
        LIMIT 20`,
       [req.professorId]

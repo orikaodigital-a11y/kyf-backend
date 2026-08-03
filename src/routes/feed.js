@@ -1,7 +1,12 @@
 const express = require("express");
 const pool = require("../db");
+const { requireAuth } = require("../middleware/auth");
+const { chargeWallet } = require("../lib/payments");
 
 const router = express.Router();
+
+const POST_BOOST_PRICE_PAISE = 4900; // ₹49, mirrors the prototype's category boost price
+const BOOST_DURATION_DAYS = 3;
 
 // Domains treated as personal (NOT institutional) — block these from posting
 const personalEmailDomains = [
@@ -129,12 +134,63 @@ module.exports = router;
 router.get("/:professor_id", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id, content, created_at FROM posts WHERE professor_id = $1 ORDER BY created_at DESC",
+      "SELECT id, content, created_at, boosted, boost_expires_at FROM posts WHERE professor_id = $1 ORDER BY created_at DESC",
       [req.params.professor_id]
     );
     res.json({ posts: result.rows });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong." });
+  }
+});
+
+// GET /feed/all/posts — every professor's posts, boosted-and-unexpired first, then newest first.
+router.get("/all/posts", requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT po.id, po.content, po.created_at, po.boosted, po.boost_expires_at,
+              p.id AS author_id, p.name AS author_name, p.university AS author_university,
+              p.department AS author_department, p.title AS author_title, p.email_verified AS author_verified
+       FROM posts po
+       JOIN professors p ON p.id = po.professor_id
+       ORDER BY (po.boosted AND po.boost_expires_at > now()) DESC, po.created_at DESC
+       LIMIT 50`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading the feed." });
+  }
+});
+
+// POST /feed/:id/boost — author-only, paid. Boosts the post to the top of everyone's feed for 3 days.
+router.post("/:id/boost", requireAuth, async (req, res) => {
+  try {
+    const postResult = await pool.query("SELECT professor_id FROM posts WHERE id = $1", [req.params.id]);
+    if (postResult.rows.length === 0) {
+      return res.status(404).json({ error: "Post not found." });
+    }
+    if (postResult.rows[0].professor_id !== req.professorId) {
+      return res.status(403).json({ error: "You can only boost your own posts." });
+    }
+
+    try {
+      await chargeWallet(req.professorId, POST_BOOST_PRICE_PAISE, "post_boost", `Boost for post ${req.params.id}`);
+    } catch (err) {
+      if (err.code === "INSUFFICIENT_FUNDS") {
+        return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });
+      }
+      throw err;
+    }
+
+    const result = await pool.query(
+      `UPDATE posts SET boosted = true, boost_expires_at = now() + interval '${BOOST_DURATION_DAYS} days'
+       WHERE id = $1 RETURNING *`,
+      [req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong boosting that post." });
   }
 });

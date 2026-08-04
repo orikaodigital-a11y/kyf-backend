@@ -6,11 +6,10 @@ const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
 const { uploadFile } = require("../lib/storage");
+const { getPriceAmount } = require("../lib/pricing");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
-
-const FEATURED_PRICE_PAISE = 19900; // ₹199/month, mirrors the prototype's price
 
 // GET /professors/me  — requires a valid login token
 router.get("/me", requireAuth, async (req, res) => {
@@ -59,7 +58,8 @@ router.put("/me", requireAuth, async (req, res) => {
 router.post("/me/featured", requireAuth, async (req, res) => {
   try {
     try {
-      await chargeWallet(req.professorId, FEATURED_PRICE_PAISE, "featured_profile", "Featured Profile - 30 days");
+      const price = await getPriceAmount("featured_profile");
+      await chargeWallet(req.professorId, price, "featured_profile", "Featured Profile - 30 days");
     } catch (err) {
       if (err.code === "INSUFFICIENT_FUNDS") {
         return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });

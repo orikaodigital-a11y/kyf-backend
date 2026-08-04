@@ -2,10 +2,10 @@ const express = require("express");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
+const { getPriceAmount } = require("../lib/pricing");
 
 const router = express.Router();
 
-const POST_BOOST_PRICE_PAISE = 4900; // ₹49, mirrors the prototype's category boost price
 const BOOST_DURATION_DAYS = 3;
 
 // Domains treated as personal (NOT institutional) — block these from posting
@@ -175,7 +175,8 @@ router.post("/:id/boost", requireAuth, async (req, res) => {
     }
 
     try {
-      await chargeWallet(req.professorId, POST_BOOST_PRICE_PAISE, "post_boost", `Boost for post ${req.params.id}`);
+      const price = await getPriceAmount("post_boost");
+      await chargeWallet(req.professorId, price, "post_boost", `Boost for post ${req.params.id}`);
     } catch (err) {
       if (err.code === "INSUFFICIENT_FUNDS") {
         return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });

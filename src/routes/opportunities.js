@@ -4,10 +4,9 @@ const express = require("express");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
+const { getPriceAmount } = require("../lib/pricing");
 
 const router = express.Router();
-
-const OPPORTUNITY_POST_PRICE_PAISE = 10000; // ₹100, mirrors the prototype's pricing
 
 // GET /opportunities — active (not yet expired) postings, newest first.
 router.get("/", requireAuth, async (req, res) => {
@@ -38,7 +37,8 @@ router.post("/", requireAuth, async (req, res) => {
 
   try {
     try {
-      await chargeWallet(req.professorId, OPPORTUNITY_POST_PRICE_PAISE, "opportunity_post", title);
+      const price = await getPriceAmount("opportunity_post");
+      await chargeWallet(req.professorId, price, "opportunity_post", title);
     } catch (err) {
       if (err.code === "INSUFFICIENT_FUNDS") {
         return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });

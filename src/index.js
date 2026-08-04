@@ -6,6 +6,7 @@ const cors = require("cors");
 const authRoutes = require("./routes/auth");
 const adminAuthRoutes = require("./routes/adminAuth");
 const adminRoutes = require("./routes/admin");
+const pricingRoutes = require("./routes/pricing");
 const professorRoutes = require("./routes/professors");
 const discoverRoutes = require("./routes/discover");
 const matchesRoutes = require("./routes/matches");
@@ -30,6 +31,7 @@ app.get("/health", (req, res) => {
 app.use("/auth", authRoutes);
 app.use("/admin/auth", adminAuthRoutes);
 app.use("/admin", adminRoutes);
+app.use("/pricing", pricingRoutes);
 app.use("/professors", professorRoutes);
 app.use("/discover", discoverRoutes);
 app.use("/matches", matchesRoutes);

@@ -6,10 +6,9 @@ const express = require("express");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
+const { getPriceAmount } = require("../lib/pricing");
 
 const router = express.Router();
-
-const SPONSORED_AD_PRICE_PAISE = 100000; // ₹1000, mirrors the prototype's price
 
 // POST /sponsored-ads — Body: { advertiser, body, ctaLabel, link, categories }
 router.post("/", requireAuth, async (req, res) => {
@@ -21,9 +20,10 @@ router.post("/", requireAuth, async (req, res) => {
   try {
     let charge;
     try {
+      const price = await getPriceAmount("sponsored_ad");
       charge = await chargeWallet(
         req.professorId,
-        SPONSORED_AD_PRICE_PAISE,
+        price,
         "sponsored_ad",
         `Sponsored ad — ${advertiser}`,
         "held"

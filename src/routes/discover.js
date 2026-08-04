@@ -4,10 +4,9 @@ const express = require("express");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
+const { getPriceAmount } = require("../lib/pricing");
 
 const router = express.Router();
-
-const PRIORITY_CONNECT_PRICE_PAISE = 3000; // ₹30, mirrors the prototype's Priority Connect price
 
 // Haversine distance in km, computed in SQL. Only ever returned when BOTH
 // sides have location sharing on - never exposes anyone's raw lat/lng to
@@ -143,9 +142,10 @@ router.post("/priority/:professorId", requireAuth, async (req, res) => {
   try {
     let balance;
     try {
+      const price = await getPriceAmount("priority_connect");
       const charge = await chargeWallet(
         fromId,
-        PRIORITY_CONNECT_PRICE_PAISE,
+        price,
         "priority_connect",
         `Priority Connect to professor ${toId}`
       );

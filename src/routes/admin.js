@@ -366,4 +366,110 @@ router.get("/finance", requireAdminAuth, async (req, res) => {
   }
 });
 
+// ---------------- Legal Pages ----------------
+router.get("/legal-pages", requireAdminAuth, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM legal_pages ORDER BY key ASC");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading legal pages." });
+  }
+});
+
+// PATCH /admin/legal-pages/:key — Body: { title?, body? }
+router.patch("/legal-pages/:key", requireAdminAuth, async (req, res) => {
+  const { title, body } = req.body;
+  if (!title && !body) {
+    return res.status(400).json({ error: "Nothing to update." });
+  }
+  try {
+    const result = await pool.query(
+      `UPDATE legal_pages SET title = COALESCE($1, title), body = COALESCE($2, body), updated_at = now()
+       WHERE key = $3 RETURNING *`,
+      [title || null, body || null, req.params.key]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: "Unknown legal page." });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong updating that page." });
+  }
+});
+
+// ---------------- App Settings (help categories, announcement banner) ----------------
+router.get("/app-settings", requireAdminAuth, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT key, value FROM app_settings");
+    const settings = {};
+    for (const row of result.rows) settings[row.key] = row.value;
+    res.json(settings);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading app settings." });
+  }
+});
+
+// PATCH /admin/app-settings/:key — Body: { value }
+router.patch("/app-settings/:key", requireAdminAuth, async (req, res) => {
+  const { value } = req.body;
+  if (value === undefined) {
+    return res.status(400).json({ error: "Value is required." });
+  }
+  try {
+    const result = await pool.query(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ($1, $2, now())
+       ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = now()
+       RETURNING *`,
+      [req.params.key, JSON.stringify(value)]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong updating that setting." });
+  }
+});
+
+// ---------------- Matching (Collab Score weights) ----------------
+router.get("/matching/weights", requireAdminAuth, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM collab_score_weights WHERE id = 1");
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading matching weights." });
+  }
+});
+
+// PATCH /admin/matching/weights — Body: any subset of the weight columns
+router.patch("/matching/weights", requireAdminAuth, async (req, res) => {
+  const FIELDS = ["base", "category_match", "per_tag_overlap", "max_tag_bonus", "per_goal_overlap", "max_goal_bonus", "cap"];
+  const updates = [];
+  const values = [];
+  for (const field of FIELDS) {
+    if (req.body[field] !== undefined) {
+      const n = Number(req.body[field]);
+      if (!Number.isFinite(n) || n < 0) {
+        return res.status(400).json({ error: `Invalid value for ${field}.` });
+      }
+      values.push(n);
+      updates.push(`${field} = $${values.length}`);
+    }
+  }
+  if (updates.length === 0) {
+    return res.status(400).json({ error: "Nothing to update." });
+  }
+  values.push(1);
+  try {
+    const result = await pool.query(
+      `UPDATE collab_score_weights SET ${updates.join(", ")}, updated_at = now() WHERE id = $${values.length} RETURNING *`,
+      values
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong updating matching weights." });
+  }
+});
+
 module.exports = router;

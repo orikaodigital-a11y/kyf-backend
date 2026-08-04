@@ -155,6 +155,22 @@ router.put("/me/location", requireAuth, async (req, res) => {
   }
 });
 
+// PATCH /professors/me/push-token — Body: { pushToken }. Saves this device's
+// Expo push token so admin-sent notifications can reach it.
+router.patch("/me/push-token", requireAuth, async (req, res) => {
+  const { pushToken } = req.body;
+  if (!pushToken) {
+    return res.status(400).json({ error: "Push token is required." });
+  }
+  try {
+    await pool.query("UPDATE professors SET push_token = $1 WHERE id = $2", [pushToken, req.professorId]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong saving your push token." });
+  }
+});
+
 // POST /professors/me/photo — multipart form upload, field name "photo".
 router.post("/me/photo", requireAuth, upload.single("photo"), async (req, res) => {
   if (!req.file) {

@@ -5,6 +5,7 @@ const express = require("express");
 const pool = require("../db");
 const { requireAdminAuth } = require("../middleware/auth");
 const { resolveHeldTransaction } = require("../lib/payments");
+const { sendExpoPushNotifications } = require("../lib/expoPush");
 
 const router = express.Router();
 
@@ -469,6 +470,41 @@ router.patch("/matching/weights", requireAdminAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong updating matching weights." });
+  }
+});
+
+// ---------------- Push Notifications ----------------
+router.get("/notifications", requireAdminAuth, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM sent_notifications ORDER BY created_at DESC LIMIT 100");
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading notification history." });
+  }
+});
+
+// POST /admin/notifications/send — Body: { title, body }. Broadcasts to every
+// professor who has registered a push token.
+router.post("/notifications/send", requireAdminAuth, async (req, res) => {
+  const { title, body } = req.body;
+  if (!title?.trim() || !body?.trim()) {
+    return res.status(400).json({ error: "Title and body are required." });
+  }
+  try {
+    const tokensRes = await pool.query("SELECT push_token FROM professors WHERE push_token IS NOT NULL");
+    const tokens = tokensRes.rows.map((r) => r.push_token);
+    const sent = await sendExpoPushNotifications(tokens, title.trim(), body.trim());
+
+    const logRes = await pool.query(
+      `INSERT INTO sent_notifications (title, body, target, recipient_count)
+       VALUES ($1, $2, 'all', $3) RETURNING *`,
+      [title.trim(), body.trim(), sent]
+    );
+    res.status(201).json(logRes.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong sending that notification." });
   }
 });
 

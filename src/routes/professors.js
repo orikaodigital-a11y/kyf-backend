@@ -18,7 +18,7 @@ router.get("/me", requireAuth, async (req, res) => {
       `SELECT id, name, university, department, category, email, username, email_verified,
               wallet_balance_paise, bio, tags, seeking, title, photo_url,
               orcid_id, orcid_verified, publications_count, h_index,
-              featured_active, featured_expires_at
+              featured_active, featured_expires_at, researchgate_url, scholar_url
        FROM professors WHERE id = $1`,
       [req.professorId]
     );
@@ -31,18 +31,18 @@ router.get("/me", requireAuth, async (req, res) => {
     res.status(500).json({ error: "Something went wrong fetching your profile." });
   }
 });
-// PUT /professors/me — update your own bio, tags, and seeking.
-// Only these three fields can be changed here for now.
+// PUT /professors/me — update your own bio, tags, seeking, and research links.
 router.put("/me", requireAuth, async (req, res) => {
-  const { bio, tags, seeking, department, category } = req.body;
+  const { bio, tags, seeking, department, category, researchgateUrl, scholarUrl } = req.body;
 
   try {
     const result = await pool.query(
       `UPDATE professors
-       SET bio = $1, tags = $2, seeking = $3, department = $4, category = $5
-       WHERE id = $6
-       RETURNING id, name, university, department, category, username, email_verified, bio, tags, seeking, title, photo_url`,
-      [bio, tags, seeking, department, category, req.professorId]
+       SET bio = $1, tags = $2, seeking = $3, department = $4, category = $5,
+           researchgate_url = COALESCE($6, researchgate_url), scholar_url = COALESCE($7, scholar_url)
+       WHERE id = $8
+       RETURNING id, name, university, department, category, username, email_verified, bio, tags, seeking, title, photo_url, researchgate_url, scholar_url`,
+      [bio, tags, seeking, department, category, researchgateUrl || null, scholarUrl || null, req.professorId]
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Profile not found." });

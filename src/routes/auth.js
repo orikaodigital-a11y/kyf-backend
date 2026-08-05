@@ -7,10 +7,24 @@ const pool = require("../db");
 
 const router = express.Router();
 
+// GET /auth/check-username?u=xyz — live availability check for the signup wizard.
+router.get("/check-username", async (req, res) => {
+  const u = (req.query.u || "").trim();
+  if (u.length < 3) return res.json({ available: false });
+  try {
+    const result = await pool.query("SELECT id FROM professors WHERE username = $1", [u]);
+    res.json({ available: result.rows.length === 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong." });
+  }
+});
+
 // POST /auth/signup
-// Body: { name, university, department, category, email, username, password }
+// Body: { name, university, department, category, email, username, password,
+//         title, tags (array), bio, seeking (array) }
 router.post("/signup", async (req, res) => {
-  const { name, university, department, category, email, username, password } = req.body;
+  const { name, university, department, category, email, username, password, title, tags, bio, seeking } = req.body;
 
   if (!name || !university || !category || !email || !username || !password) {
     return res.status(400).json({ error: "Missing required fields." });
@@ -31,10 +45,10 @@ router.post("/signup", async (req, res) => {
     const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await pool.query(
-      `INSERT INTO professors (name, university, department, category, email, username, password_hash)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, name, university, department, category, email, username`,
-      [name, university, department || null, category, email, username, passwordHash]
+      `INSERT INTO professors (name, university, department, category, email, username, password_hash, title, tags, bio, seeking)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+       RETURNING id, name, university, department, category, email, username, title, tags, bio, seeking`,
+      [name, university, department || null, category, email, username, passwordHash, title || null, tags || [], bio || null, seeking || []]
     );
 
     const professor = result.rows[0];

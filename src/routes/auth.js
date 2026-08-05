@@ -26,8 +26,10 @@ router.get("/check-username", async (req, res) => {
 router.post("/signup", async (req, res) => {
   const { name, university, department, category, email, username, password, title, tags, bio, seeking } = req.body;
 
-  if (!name || !university || !category || !email || !username || !password) {
-    return res.status(400).json({ error: "Missing required fields." });
+  const required = { name, university, category, email, username, password };
+  const missing = Object.keys(required).filter((k) => !required[k]);
+  if (missing.length > 0) {
+    return res.status(400).json({ error: `Missing required fields: ${missing.join(", ")}.` });
   }
   if (password.length < 8) {
     return res.status(400).json({ error: "Password must be at least 8 characters." });

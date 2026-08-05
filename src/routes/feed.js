@@ -1,10 +1,33 @@
 const express = require("express");
+const multer = require("multer");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
 const { getPriceAmount } = require("../lib/pricing");
+const { uploadFile } = require("../lib/storage");
 
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+
+// POST /feed/image — multipart upload, field name "image". Returns { imageUrl }
+// so the app can attach it to a post created right after via POST /feed.
+router.post("/image", requireAuth, upload.single("image"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No image was uploaded." });
+  }
+  if (!req.file.mimetype.startsWith("image/")) {
+    return res.status(400).json({ error: "Only image files are allowed." });
+  }
+  try {
+    const ext = req.file.mimetype === "image/png" ? "png" : "jpg";
+    const path = `post-images/${req.professorId}-${Date.now()}.${ext}`;
+    const imageUrl = await uploadFile(path, req.file.buffer, req.file.mimetype);
+    res.json({ imageUrl });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong uploading your image." });
+  }
+});
 
 const BOOST_DURATION_DAYS = 3;
 
@@ -66,9 +89,9 @@ function isInstitutionalEmail(email) {
 }
 
 // POST /feed
-// Body: { professor_id, content }
+// Body: { professor_id, content, linkUrl, categories (array), imageUrl }
 router.post("/", async (req, res) => {
-  const { professor_id, content } = req.body;
+  const { professor_id, content, linkUrl, categories, imageUrl } = req.body;
 
   if (!professor_id || !content) {
     return res.status(400).json({ error: "Missing required fields." });
@@ -104,7 +127,8 @@ router.post("/", async (req, res) => {
     }
 
    // 4. Block harmful content — words, bad URLs, or contact info
-    if (containsBannedContent(content) || containsBadUrl(content)) {
+    const combinedText = linkUrl ? `${content} ${linkUrl}` : content;
+    if (containsBannedContent(combinedText) || containsBadUrl(combinedText)) {
       return res.status(400).json({
         error: "This content violates our community guidelines and cannot be posted.",
       });
@@ -118,8 +142,8 @@ router.post("/", async (req, res) => {
 
     // 5. Save the post
     const result = await pool.query(
-      "INSERT INTO posts (professor_id, content) VALUES ($1, $2) RETURNING *",
-      [professor_id, content]
+      "INSERT INTO posts (professor_id, content, link_url, categories, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [professor_id, content, linkUrl || null, categories || [], imageUrl || null]
     );
 
     res.status(201).json({ post: result.rows[0] });
@@ -134,7 +158,7 @@ module.exports = router;
 router.get("/:professor_id", async (req, res) => {
   try {
     const result = await pool.query(
-      "SELECT id, content, created_at, boosted, boost_expires_at FROM posts WHERE professor_id = $1 ORDER BY created_at DESC",
+      "SELECT id, content, created_at, boosted, boost_expires_at, link_url, categories, image_url FROM posts WHERE professor_id = $1 ORDER BY created_at DESC",
       [req.params.professor_id]
     );
     res.json({ posts: result.rows });
@@ -148,7 +172,7 @@ router.get("/:professor_id", async (req, res) => {
 router.get("/all/posts", requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT po.id, po.content, po.created_at, po.boosted, po.boost_expires_at,
+      `SELECT po.id, po.content, po.created_at, po.boosted, po.boost_expires_at, po.link_url, po.categories, po.image_url,
               p.id AS author_id, p.name AS author_name, p.university AS author_university,
               p.department AS author_department, p.title AS author_title, p.email_verified AS author_verified
        FROM posts po

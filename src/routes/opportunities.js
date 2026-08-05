@@ -5,11 +5,12 @@ const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
 const { getPriceAmount } = require("../lib/pricing");
+const { requireVerified } = require("../lib/verification");
 
 const router = express.Router();
 
 // GET /opportunities — active (not yet expired) postings, newest first.
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, requireVerified, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT o.id, o.title, o.description, o.category, o.seeking, o.created_at, o.expires_at,
@@ -29,7 +30,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 // POST /opportunities — Body: { title, description, category, seeking }
 // Charges the wallet, then posts, live for 30 days.
-router.post("/", requireAuth, async (req, res) => {
+router.post("/", requireAuth, requireVerified, async (req, res) => {
   const { title, description, category, seeking } = req.body;
   if (!title || !description || !category) {
     return res.status(400).json({ error: "Title, description, and category are required." });

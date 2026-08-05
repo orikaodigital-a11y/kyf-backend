@@ -82,6 +82,49 @@ router.patch("/reports/:id", requireAdminAuth, async (req, res) => {
   }
 });
 
+// ---------------- Verification requests ----------------
+// Manual identity verification for professors without an institutional email.
+router.get("/verification-requests", requireAdminAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT vr.*, p.name AS professor_name, p.email AS professor_email, p.university AS professor_university
+       FROM verification_requests vr
+       JOIN professors p ON p.id = vr.professor_id
+       ORDER BY (vr.status = 'pending') DESC, vr.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading verification requests." });
+  }
+});
+
+// PATCH /admin/verification-requests/:id — Body: { status, adminNote }. status: approved | rejected
+router.patch("/verification-requests/:id", requireAdminAuth, async (req, res) => {
+  const { status, adminNote } = req.body;
+  if (!["approved", "rejected"].includes(status)) {
+    return res.status(400).json({ error: "Invalid status." });
+  }
+  try {
+    const result = await pool.query(
+      `UPDATE verification_requests SET status = $1, admin_note = $2, reviewed_at = now()
+       WHERE id = $3 RETURNING *`,
+      [status, adminNote || null, req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Request not found." });
+    }
+    const request = result.rows[0];
+    if (status === "approved") {
+      await pool.query("UPDATE professors SET email_verified = true WHERE id = $1", [request.professor_id]);
+    }
+    res.json(request);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong updating that request." });
+  }
+});
+
 // ---------------- Support tickets ----------------
 router.get("/support-tickets", requireAdminAuth, async (req, res) => {
   try {

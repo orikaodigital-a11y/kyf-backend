@@ -5,13 +5,14 @@ const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
 const { getPriceAmount } = require("../lib/pricing");
 const { uploadFile } = require("../lib/storage");
+const { ensureAutoVerified, requireVerified } = require("../lib/verification");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
 
 // POST /feed/image — multipart upload, field name "image". Returns { imageUrl }
 // so the app can attach it to a post created right after via POST /feed.
-router.post("/image", requireAuth, upload.single("image"), async (req, res) => {
+router.post("/image", requireAuth, requireVerified, upload.single("image"), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: "No image was uploaded." });
   }
@@ -30,12 +31,6 @@ router.post("/image", requireAuth, upload.single("image"), async (req, res) => {
 });
 
 const BOOST_DURATION_DAYS = 3;
-
-// Domains treated as personal (NOT institutional) — block these from posting
-const personalEmailDomains = [
-  "gmail.com", "yahoo.com", "outlook.com", "hotmail.com",
-  "icloud.com", "protonmail.com", "rediffmail.com", "live.com"
-];
 
 // Basic blocklist for harmful content — expand this list as needed
 const bannedWords = [
@@ -83,50 +78,18 @@ function containsBannedContent(text) {
   return bannedWords.some((word) => lower.includes(word));
 }
 
-function isInstitutionalEmail(email) {
-  const domain = email.split("@")[1]?.toLowerCase();
-  return domain && !personalEmailDomains.includes(domain);
-}
-
 // POST /feed
-// Body: { professor_id, content, linkUrl, categories (array), imageUrl }
-router.post("/", async (req, res) => {
-  const { professor_id, content, linkUrl, categories, imageUrl } = req.body;
+// Body: { content, linkUrl, categories (array), imageUrl }
+// requireVerified already confirms the professor is verified before this runs.
+router.post("/", requireAuth, requireVerified, async (req, res) => {
+  const { content, linkUrl, categories, imageUrl } = req.body;
 
-  if (!professor_id || !content) {
+  if (!content) {
     return res.status(400).json({ error: "Missing required fields." });
   }
 
   try {
-    // 1. Check professor exists and get their email + verified status
-    const profResult = await pool.query(
-      "SELECT email, email_verified FROM professors WHERE id = $1",
-      [professor_id]
-    );
-
-    if (profResult.rows.length === 0) {
-      return res.status(404).json({ error: "Professor not found." });
-    }
-
-    const professor = profResult.rows[0];
-
-    // 2. Auto-verify if institutional email and not already verified
-    if (!professor.email_verified && isInstitutionalEmail(professor.email)) {
-      await pool.query(
-        "UPDATE professors SET email_verified = true WHERE id = $1",
-        [professor_id]
-      );
-      professor.email_verified = true;
-    }
-
-    // 3. Block posting if still not verified
-    if (!professor.email_verified) {
-      return res.status(403).json({
-        error: "Please verify your institutional email to post in the feed.",
-      });
-    }
-
-   // 4. Block harmful content — words, bad URLs, or contact info
+    // Block harmful content — words, bad URLs, or contact info
     const combinedText = linkUrl ? `${content} ${linkUrl}` : content;
     if (containsBannedContent(combinedText) || containsBadUrl(combinedText)) {
       return res.status(400).json({
@@ -140,10 +103,9 @@ router.post("/", async (req, res) => {
       });
     }
 
-    // 5. Save the post
     const result = await pool.query(
       "INSERT INTO posts (professor_id, content, link_url, categories, image_url) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [professor_id, content, linkUrl || null, categories || [], imageUrl || null]
+      [req.professorId, content, linkUrl || null, categories || [], imageUrl || null]
     );
 
     res.status(201).json({ post: result.rows[0] });
@@ -169,7 +131,7 @@ router.get("/:professor_id", async (req, res) => {
 });
 
 // GET /feed/all/posts — every professor's posts, boosted-and-unexpired first, then newest first.
-router.get("/all/posts", requireAuth, async (req, res) => {
+router.get("/all/posts", requireAuth, requireVerified, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT po.id, po.content, po.created_at, po.boosted, po.boost_expires_at, po.link_url, po.categories, po.image_url,

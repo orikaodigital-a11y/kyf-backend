@@ -56,6 +56,28 @@ router.put("/me", requireAuth, async (req, res) => {
   }
 });
 
+// PUT /professors/me/email — Body: { email }. Lets a professor switch to an
+// institutional address later even if they signed up with a personal one -
+// re-runs the auto-verify check right after, since that's the whole point.
+router.put("/me/email", requireAuth, async (req, res) => {
+  const email = (req.body.email || "").trim();
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Enter a valid email address." });
+  }
+  try {
+    const existing = await pool.query("SELECT id FROM professors WHERE email = $1 AND id != $2", [email, req.professorId]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: "That email is already in use by another account." });
+    }
+    await pool.query("UPDATE professors SET email = $1 WHERE id = $2", [email, req.professorId]);
+    const verified = await ensureAutoVerified(req.professorId);
+    res.json({ email, email_verified: verified });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong updating your email." });
+  }
+});
+
 // POST /professors/me/featured — activate Featured Profile for 30 days, paid.
 router.post("/me/featured", requireAuth, async (req, res) => {
   try {

@@ -6,6 +6,7 @@ const pool = require("../db");
 const { requireAdminAuth } = require("../middleware/auth");
 const { resolveHeldTransaction } = require("../lib/payments");
 const { sendExpoPushNotifications } = require("../lib/expoPush");
+const { createNotification } = require("../lib/notifications");
 
 const router = express.Router();
 
@@ -527,27 +528,67 @@ router.get("/notifications", requireAdminAuth, async (req, res) => {
   }
 });
 
-// POST /admin/notifications/send — Body: { title, body }. Broadcasts to every
-// professor who has registered a push token.
+// POST /admin/notifications/send — Body: { title, body, categories? }.
+// Broadcasts to every professor with a push token, optionally narrowed to
+// specific categories. Omit/empty categories = everyone.
 router.post("/notifications/send", requireAdminAuth, async (req, res) => {
-  const { title, body } = req.body;
+  const { title, body, categories } = req.body;
   if (!title?.trim() || !body?.trim()) {
     return res.status(400).json({ error: "Title and body are required." });
   }
+  const targetCategories = Array.isArray(categories) ? categories.filter(Boolean) : [];
   try {
-    const tokensRes = await pool.query("SELECT push_token FROM professors WHERE push_token IS NOT NULL");
-    const tokens = tokensRes.rows.map((r) => r.push_token);
-    const sent = await sendExpoPushNotifications(tokens, title.trim(), body.trim());
+    const recipientsRes = targetCategories.length > 0
+      ? await pool.query(
+          "SELECT id, push_token FROM professors WHERE push_token IS NOT NULL AND category = ANY($1)",
+          [targetCategories]
+        )
+      : await pool.query("SELECT id, push_token FROM professors WHERE push_token IS NOT NULL");
+
+    const tokens = recipientsRes.rows.map((r) => r.push_token);
+    const { sent, errors } = await sendExpoPushNotifications(tokens, title.trim(), body.trim());
+
+    await Promise.all(
+      recipientsRes.rows.map((r) => createNotification(r.id, "admin_broadcast", title.trim(), body.trim(), null, null))
+    );
 
     const logRes = await pool.query(
-      `INSERT INTO sent_notifications (title, body, target, recipient_count)
-       VALUES ($1, $2, 'all', $3) RETURNING *`,
-      [title.trim(), body.trim(), sent]
+      `INSERT INTO sent_notifications (title, body, target, recipient_count, categories)
+       VALUES ($1, $2, $3, $4, $5) RETURNING *`,
+      [title.trim(), body.trim(), targetCategories.length > 0 ? "category" : "all", sent, targetCategories.length > 0 ? targetCategories : null]
     );
-    res.status(201).json(logRes.rows[0]);
+    res.status(201).json({ ...logRes.rows[0], attempted: tokens.length, errors: errors.slice(0, 5) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong sending that notification." });
+  }
+});
+
+// ---------------- Welcome notification setting ----------------
+router.get("/welcome-notification", requireAdminAuth, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT value FROM app_settings WHERE key = 'welcome_notification'");
+    res.json(result.rows[0]?.value || { active: false, title: "", body: "", promoCode: "" });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading that setting." });
+  }
+});
+
+// PATCH /admin/welcome-notification — Body: { active, title, body, promoCode }
+router.patch("/welcome-notification", requireAdminAuth, async (req, res) => {
+  const { active, title, body, promoCode } = req.body;
+  try {
+    const value = { active: !!active, title: title || "", body: body || "", promoCode: promoCode || "" };
+    await pool.query(
+      `INSERT INTO app_settings (key, value, updated_at) VALUES ('welcome_notification', $1, now())
+       ON CONFLICT (key) DO UPDATE SET value = $1, updated_at = now()`,
+      [JSON.stringify(value)]
+    );
+    res.json(value);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong saving that setting." });
   }
 });
 

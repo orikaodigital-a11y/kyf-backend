@@ -20,6 +20,8 @@ const reportsRoutes = require("./routes/reports");
 const blocksRoutes = require("./routes/blocks");
 const sponsoredAdsRoutes = require("./routes/sponsoredAds");
 const verificationRequestsRoutes = require("./routes/verificationRequests");
+const notificationsRoutes = require("./routes/notifications");
+const bundleOffersRoutes = require("./routes/bundleOffers");
 
 const app = express();
 app.use(cors()); // lets the app (running on a different address) talk to this server
@@ -47,6 +49,8 @@ app.use("/reports", reportsRoutes);
 app.use("/blocks", blocksRoutes);
 app.use("/sponsored-ads", sponsoredAdsRoutes);
 app.use("/verification-requests", verificationRequestsRoutes);
+app.use("/notifications", notificationsRoutes);
+app.use("/bundle-offers", bundleOffersRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

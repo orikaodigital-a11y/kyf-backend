@@ -6,6 +6,7 @@ const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
 const { getPriceAmount } = require("../lib/pricing");
 const { sendExpoPushNotifications } = require("../lib/expoPush");
+const { createNotification } = require("../lib/notifications");
 
 const router = express.Router();
 
@@ -45,6 +46,8 @@ async function getMyLocation(professorId) {
 // Shared by the free Like button and the paid Priority Connect action.
 async function likeAndMaybeMatch(fromId, toId) {
   const client = await pool.connect();
+  let matched = false;
+  let matchId = null;
   try {
     await client.query("BEGIN");
     await client.query(
@@ -57,7 +60,6 @@ async function likeAndMaybeMatch(fromId, toId) {
       "SELECT id FROM likes WHERE from_professor_id = $1 AND to_professor_id = $2",
       [toId, fromId]
     );
-    let matched = false;
     if (reverseLike.rows.length > 0) {
       const [a, b] = [fromId, toId].sort();
       await client.query(
@@ -66,16 +68,42 @@ async function likeAndMaybeMatch(fromId, toId) {
          ON CONFLICT (professor_a_id, professor_b_id) DO NOTHING`,
         [a, b]
       );
+      const matchRow = await client.query(
+        "SELECT id FROM matches WHERE professor_a_id = $1 AND professor_b_id = $2",
+        [a, b]
+      );
+      matchId = matchRow.rows[0]?.id || null;
       matched = true;
     }
     await client.query("COMMIT");
-    return matched;
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;
   } finally {
     client.release();
   }
+
+  // Best-effort in-app notifications - never let this fail the caller.
+  try {
+    const [fromRes, toRes] = await Promise.all([
+      pool.query("SELECT name FROM professors WHERE id = $1", [fromId]),
+      pool.query("SELECT name FROM professors WHERE id = $1", [toId]),
+    ]);
+    const fromName = fromRes.rows[0]?.name;
+    const toName = toRes.rows[0]?.name;
+    if (matched && matchId) {
+      await Promise.all([
+        createNotification(fromId, "match", "It's a Match! 🎉", `You and ${toName} connected.`, "/chat/[matchId]", { matchId, name: toName }),
+        createNotification(toId, "match", "It's a Match! 🎉", `You and ${fromName} connected.`, "/chat/[matchId]", { matchId, name: fromName }),
+      ]);
+    } else if (fromName) {
+      await createNotification(toId, "incoming_like", "New interest", `${fromName} is interested in connecting with you.`, "/discover", null);
+    }
+  } catch (notifErr) {
+    console.error(notifErr);
+  }
+
+  return matched;
 }
 
 // GET /discover — professors you haven't already liked or passed on, newest accounts first.

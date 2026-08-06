@@ -8,6 +8,8 @@ const { chargeWallet } = require("../lib/payments");
 const { uploadFile } = require("../lib/storage");
 const { getPriceAmount } = require("../lib/pricing");
 const { ensureAutoVerified } = require("../lib/verification");
+const { sendExpoPushNotifications } = require("../lib/expoPush");
+const { createNotification } = require("../lib/notifications");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -187,8 +189,29 @@ router.patch("/me/push-token", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Push token is required." });
   }
   try {
+    const before = await pool.query("SELECT push_token FROM professors WHERE id = $1", [req.professorId]);
+    const isFirstRegistration = !before.rows[0]?.push_token;
     await pool.query("UPDATE professors SET push_token = $1 WHERE id = $2", [pushToken, req.professorId]);
     res.json({ ok: true });
+
+    // First time this professor's device registers a token - fire the
+    // welcome notification if the admin has one configured. Best-effort,
+    // never lets a failure here affect the (already-sent) response.
+    if (isFirstRegistration) {
+      try {
+        const settingRes = await pool.query("SELECT value FROM app_settings WHERE key = 'welcome_notification'");
+        const setting = settingRes.rows[0]?.value;
+        if (setting?.active && setting.title?.trim() && setting.body?.trim()) {
+          const body = setting.promoCode?.trim()
+            ? `${setting.body.trim()} Use code ${setting.promoCode.trim()}.`
+            : setting.body.trim();
+          await sendExpoPushNotifications([pushToken], setting.title.trim(), body);
+          await createNotification(req.professorId, "admin_broadcast", setting.title.trim(), body, null, null);
+        }
+      } catch (welcomeErr) {
+        console.error(welcomeErr);
+      }
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong saving your push token." });

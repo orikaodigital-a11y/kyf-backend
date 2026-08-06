@@ -19,7 +19,7 @@ router.post("/razorpay/order", requireAuth, async (req, res) => {
     const order = await getRazorpay().orders.create({
       amount: amountPaise,
       currency: "INR",
-      receipt: `wallet_${req.professorId}_${Date.now()}`,
+      receipt: `wtop_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     });
     res.json({ orderId: order.id, amount: order.amount, currency: order.currency, keyId: process.env.RAZORPAY_KEY_ID });
   } catch (err) {

@@ -4,7 +4,7 @@ const crypto = require("crypto");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { getWallet, creditWallet } = require("../lib/payments");
-const razorpay = require("../lib/razorpay");
+const { getRazorpay } = require("../lib/razorpay");
 
 const router = express.Router();
 
@@ -16,7 +16,7 @@ router.post("/razorpay/order", requireAuth, async (req, res) => {
     return res.status(400).json({ error: "Enter a valid amount." });
   }
   try {
-    const order = await razorpay.orders.create({
+    const order = await getRazorpay().orders.create({
       amount: amountPaise,
       currency: "INR",
       receipt: `wallet_${req.professorId}_${Date.now()}`,

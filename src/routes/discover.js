@@ -5,6 +5,7 @@ const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
 const { getPriceAmount } = require("../lib/pricing");
+const { sendExpoPushNotifications } = require("../lib/expoPush");
 
 const router = express.Router();
 
@@ -184,6 +185,28 @@ router.post("/priority/:professorId", requireAuth, async (req, res) => {
 
     const matched = await likeAndMaybeMatch(fromId, toId);
     res.json({ matched, balance });
+
+    // Best-effort push - the request already succeeded either way, so a
+    // failure here should never surface as an error to the sender.
+    try {
+      const [senderRes, receiverRes] = await Promise.all([
+        pool.query("SELECT name FROM professors WHERE id = $1", [fromId]),
+        pool.query("SELECT push_token FROM professors WHERE id = $1", [toId]),
+      ]);
+      const senderName = senderRes.rows[0]?.name;
+      const receiverToken = receiverRes.rows[0]?.push_token;
+      if (senderName && receiverToken) {
+        await sendExpoPushNotifications(
+          [receiverToken],
+          matched ? "It's a Match! 🎉" : "Priority Connect ⚡",
+          matched
+            ? `You and ${senderName} connected - open the chat.`
+            : `${senderName} sent you a Priority Connect - open their profile to connect back.`
+        );
+      }
+    } catch (pushErr) {
+      console.error(pushErr);
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong sending that priority connect." });

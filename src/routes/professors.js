@@ -7,6 +7,7 @@ const { requireAuth } = require("../middleware/auth");
 const { chargeWallet } = require("../lib/payments");
 const { uploadFile } = require("../lib/storage");
 const { getPriceAmount } = require("../lib/pricing");
+const { ensureAutoVerified } = require("../lib/verification");
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
@@ -14,6 +15,7 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 *
 // GET /professors/me  — requires a valid login token
 router.get("/me", requireAuth, async (req, res) => {
   try {
+    await ensureAutoVerified(req.professorId);
     const result = await pool.query(
       `SELECT id, name, university, department, category, email, username, email_verified,
               wallet_balance_paise, bio, tags, seeking, title, photo_url,

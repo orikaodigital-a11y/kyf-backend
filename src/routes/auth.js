@@ -4,6 +4,7 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
+const { ensureAutoVerified } = require("../lib/verification");
 
 const router = express.Router();
 
@@ -54,6 +55,7 @@ router.post("/signup", async (req, res) => {
     );
 
     const professor = result.rows[0];
+    professor.email_verified = await ensureAutoVerified(professor.id);
     const token = jwt.sign({ professorId: professor.id }, process.env.JWT_SECRET, { expiresIn: "30d" });
 
     res.status(201).json({ professor, token });

@@ -110,6 +110,31 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
+// GET /discover/new-joinees — recently joined professors, for the "New to
+// the network" carousel. Same block-list exclusion as the main deck.
+router.get("/new-joinees", requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, university, category, photo_url, created_at
+       FROM professors
+       WHERE id != $1
+         AND created_at > now() - interval '30 days'
+         AND id NOT IN (
+           SELECT blocked_id FROM blocks WHERE blocker_id = $1
+           UNION
+           SELECT blocker_id FROM blocks WHERE blocked_id = $1
+         )
+       ORDER BY created_at DESC
+       LIMIT 10`,
+      [req.professorId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading new professors." });
+  }
+});
+
 // POST /discover/like/:professorId — like someone. If they already liked you,
 // this creates a match automatically.
 router.post("/like/:professorId", requireAuth, async (req, res) => {

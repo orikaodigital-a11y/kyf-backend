@@ -63,4 +63,38 @@ router.get("/", requireAuth, async (req, res) => {
   }
 });
 
+// GET /sponsored-ads/active — approved, currently-running ads to actually
+// display in the app (Discover/Feed/Opportunities).
+router.get("/active", requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, advertiser, body, cta_label, link, categories
+       FROM sponsored_ads
+       WHERE status = 'approved' AND active = true
+         AND started_at + (duration_days || ' days')::interval > now()`
+    );
+    if (result.rows.length > 0) {
+      pool.query(
+        "UPDATE sponsored_ads SET impressions = impressions + 1 WHERE id = ANY($1)",
+        [result.rows.map((r) => r.id)]
+      ).catch(() => {});
+    }
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading ads." });
+  }
+});
+
+// POST /sponsored-ads/:id/click — track a click on the ad's CTA button.
+router.post("/:id/click", requireAuth, async (req, res) => {
+  try {
+    await pool.query("UPDATE sponsored_ads SET clicks = clicks + 1 WHERE id = $1", [req.params.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong." });
+  }
+});
+
 module.exports = router;

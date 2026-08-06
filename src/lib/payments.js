@@ -1,19 +1,8 @@
 // Wallet helpers shared by every paid feature (Priority Connect, Post Boost,
 // Opportunities, Featured Profile, Sponsored Ads, and wallet top-ups).
-//
-// DUMMY PAYMENTS NOTICE: this stands in for real Razorpay integration until
-// live API keys are added. A real top-up would create a Razorpay order,
-// have the app open Razorpay Checkout, and only credit the wallet after
-// verifying the payment signature on the server. Here, top-ups succeed
-// immediately and log a fake razorpay_payment_id so the rest of the app
-// (transaction history, held-fund flows) can be built and tested end to end
-// now, then swapped for the real flow later without touching callers of
-// chargeWallet/creditWallet.
+// Real top-ups go through Razorpay (see routes/wallet.js) and only call
+// creditWallet after the payment signature is verified server-side.
 const pool = require("../db");
-
-function fakeRazorpayPaymentId() {
-  return "dummy_" + Math.random().toString(36).slice(2, 12);
-}
 
 async function getWallet(professorId) {
   const result = await pool.query("SELECT wallet_balance_paise FROM professors WHERE id = $1", [professorId]);
@@ -110,4 +99,4 @@ async function resolveHeldTransaction(transactionId, professorId, outcome) {
   }
 }
 
-module.exports = { getWallet, chargeWallet, creditWallet, resolveHeldTransaction, fakeRazorpayPaymentId };
+module.exports = { getWallet, chargeWallet, creditWallet, resolveHeldTransaction };

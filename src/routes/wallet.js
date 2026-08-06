@@ -1,30 +1,62 @@
 // Wallet balance, top-ups, and transaction history.
-// See src/lib/payments.js for the dummy-Razorpay notice.
 const express = require("express");
+const crypto = require("crypto");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
-const { getWallet, creditWallet, fakeRazorpayPaymentId } = require("../lib/payments");
+const { getWallet, creditWallet } = require("../lib/payments");
+const razorpay = require("../lib/razorpay");
 
 const router = express.Router();
 
-// POST /wallet/topup — Body: { amountPaise }
-router.post("/topup", requireAuth, async (req, res) => {
+// POST /wallet/razorpay/order — Body: { amountPaise }
+// Creates a Razorpay order for the app to open Checkout against.
+router.post("/razorpay/order", requireAuth, async (req, res) => {
   const amountPaise = Number(req.body.amountPaise);
   if (!amountPaise || amountPaise <= 0) {
     return res.status(400).json({ error: "Enter a valid amount." });
   }
   try {
+    const order = await razorpay.orders.create({
+      amount: amountPaise,
+      currency: "INR",
+      receipt: `wallet_${req.professorId}_${Date.now()}`,
+    });
+    res.json({ orderId: order.id, amount: order.amount, currency: order.currency, keyId: process.env.RAZORPAY_KEY_ID });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong starting that payment." });
+  }
+});
+
+// POST /wallet/razorpay/verify — Body: { razorpayOrderId, razorpayPaymentId, razorpaySignature, amountPaise }
+// Verifies the payment signature server-side before crediting the wallet -
+// never trust the app's word alone that a payment succeeded.
+router.post("/razorpay/verify", requireAuth, async (req, res) => {
+  const { razorpayOrderId, razorpayPaymentId, razorpaySignature, amountPaise } = req.body;
+  if (!razorpayOrderId || !razorpayPaymentId || !razorpaySignature || !amountPaise) {
+    return res.status(400).json({ error: "Missing payment details." });
+  }
+  const expectedSignature = crypto
+    .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+    .update(`${razorpayOrderId}|${razorpayPaymentId}`)
+    .digest("hex");
+
+  if (expectedSignature !== razorpaySignature) {
+    return res.status(400).json({ error: "Payment verification failed." });
+  }
+
+  try {
     const { balance, transaction } = await creditWallet(
       req.professorId,
-      amountPaise,
+      Number(amountPaise),
       "wallet_topup",
-      "Added to wallet",
-      fakeRazorpayPaymentId()
+      "Added to wallet via Razorpay",
+      razorpayPaymentId
     );
     res.status(201).json({ balance, transaction });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Something went wrong adding money to your wallet." });
+    res.status(500).json({ error: "Payment verified but something went wrong crediting your wallet. Contact support with your payment ID: " + razorpayPaymentId });
   }
 });
 

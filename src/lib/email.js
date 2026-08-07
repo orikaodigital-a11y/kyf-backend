@@ -27,7 +27,9 @@ async function sendOtpEmail(to, code) {
     html: `
       <div style="max-width:420px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;">
         <div style="background:linear-gradient(135deg,#29ABE2,#0B5C8C);padding:24px;text-align:center;border-radius:12px 12px 0 0;">
-          <img src="${LOGO_URL}" alt="Know Your Faculty" width="180" style="display:block;margin:0 auto;" />
+          <div style="background:#fff;display:inline-block;padding:12px 20px;border-radius:10px;">
+            <img src="${LOGO_URL}" alt="Know Your Faculty" width="170" style="display:block;" />
+          </div>
         </div>
         <div style="background:#fff;padding:28px 24px;border:1px solid #E5E9EC;border-top:none;border-radius:0 0 12px 12px;">
           <p style="font-size:14px;color:#333;margin:0 0 16px;">Your verification code is:</p>

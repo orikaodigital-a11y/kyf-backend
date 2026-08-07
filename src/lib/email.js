@@ -29,23 +29,23 @@ async function sendOtpEmail(to, code) {
     subject: `${code} is your Know Your Faculty verification code`,
     html: `
       <div style="background:#F3FAFD;padding:40px 20px;text-align:center;font-family:Arial,Helvetica,sans-serif;">
-        <div style="display:inline-block;background:#0B1220;border-radius:36px;padding:14px;">
-          <div style="width:70px;height:16px;background:#0B1220;border-radius:0 0 10px 10px;margin:0 auto 6px;"></div>
-          <div style="background:#fff;border-radius:24px;padding:34px 24px;width:300px;">
-            <img src="${LOGO_URL}" alt="Know Your Faculty" width="220" style="display:block;margin:0 auto 18px;" />
-            <p style="font-weight:700;font-size:13px;color:#0B5C8C;margin:0 0 24px;">India's First Networking Platform for Educators</p>
+        <div style="display:inline-block;background:#0B1220;border-radius:44px;padding:14px 14px 20px;">
+          <div style="width:70px;height:16px;background:#0B1220;border-radius:0 0 10px 10px;margin:0 auto 8px;"></div>
+          <table role="presentation" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:30px;width:270px;height:560px;">
+            <tr>
+              <td align="center" valign="middle" style="padding:0 22px;">
+                <img src="${LOGO_URL}" alt="Know Your Faculty" width="200" style="display:block;margin:0 auto 20px;" />
+                <p style="font-weight:700;font-size:13px;color:#0B5C8C;margin:0 0 28px;">India's First Networking Platform for Educators</p>
 
-            <div style="background:linear-gradient(135deg,#29ABE2,#0B5C8C);border-radius:16px;padding:18px;margin:0 0 16px;">
-              <p style="font-size:11px;font-weight:700;color:#fff;opacity:0.9;margin:0 0 8px;letter-spacing:0.3px;">YOUR VERIFICATION CODE</p>
-              <p style="font-size:28px;font-weight:700;letter-spacing:7px;color:#fff;margin:0;">${code}</p>
-            </div>
-            <p style="font-size:11.5px;color:#7C93A6;font-weight:600;margin:0 0 20px;">This code expires in 10 minutes. If you didn't request this, you can ignore this email.</p>
-
-            <p style="font-size:10px;color:#7C93A6;margin:0;line-height:15px;">
-              By continuing, you agree to our <a href="https://knowyourfaculty.com" style="color:#0B5C8C;font-weight:700;text-decoration:underline;">Terms &amp; Conditions</a> and
-              <a href="https://knowyourfaculty.com" style="color:#0B5C8C;font-weight:700;text-decoration:underline;">Privacy Policy</a>
-            </p>
-          </div>
+                <div style="background:linear-gradient(135deg,#29ABE2,#0B5C8C);border-radius:16px;padding:20px;margin:0 0 16px;">
+                  <p style="font-size:11px;font-weight:700;color:#fff;opacity:0.9;margin:0 0 10px;letter-spacing:0.3px;">YOUR VERIFICATION CODE</p>
+                  <p style="font-size:28px;font-weight:700;letter-spacing:7px;color:#fff;margin:0;">${code}</p>
+                </div>
+                <p style="font-size:11.5px;color:#7C93A6;font-weight:600;margin:0;">This code expires in 10 minutes. If you didn't request this, you can ignore this email.</p>
+              </td>
+            </tr>
+          </table>
+          <div style="width:90px;height:5px;background:#4A5568;border-radius:3px;margin:14px auto 0;"></div>
         </div>
       </div>
     `,

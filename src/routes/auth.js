@@ -4,7 +4,8 @@ const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const pool = require("../db");
-const { ensureAutoVerified } = require("../lib/verification");
+const { isInstitutionalEmail } = require("../lib/verification");
+const { issueEmailOtp, checkEmailOtp, wasEmailRecentlyVerified } = require("../lib/emailOtp");
 
 const router = express.Router();
 
@@ -18,6 +19,39 @@ router.get("/check-username", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong." });
+  }
+});
+
+// POST /auth/send-email-otp — Body: { email }. Used before an account exists
+// (signup wizard) to prove the professor actually owns this inbox.
+router.post("/send-email-otp", async (req, res) => {
+  const email = (req.body.email || "").trim();
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Enter a valid email address." });
+  }
+  try {
+    await issueEmailOtp(email);
+    res.json({ sent: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not send that verification email. Try again in a moment." });
+  }
+});
+
+// POST /auth/verify-email-otp — Body: { email, code }
+router.post("/verify-email-otp", async (req, res) => {
+  const email = (req.body.email || "").trim();
+  const code = req.body.code;
+  if (!email || !code) {
+    return res.status(400).json({ error: "Missing email or code." });
+  }
+  try {
+    const ok = await checkEmailOtp(email, code);
+    if (!ok) return res.status(400).json({ error: "That code is incorrect or has expired." });
+    res.json({ verified: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong verifying that code." });
   }
 });
 
@@ -47,15 +81,19 @@ router.post("/signup", async (req, res) => {
 
     const passwordHash = await bcrypt.hash(password, 10);
 
+    // Verified only if the email looks institutional AND was actually
+    // OTP-proven moments ago in the signup wizard - a domain guess alone
+    // (or an unverified personal email) is never enough on its own.
+    const emailVerified = isInstitutionalEmail(email) && (await wasEmailRecentlyVerified(email));
+
     const result = await pool.query(
-      `INSERT INTO professors (name, university, department, category, email, username, password_hash, title, tags, bio, seeking)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-       RETURNING id, name, university, department, category, email, username, title, tags, bio, seeking`,
-      [name, university, department || null, category, email, username, passwordHash, title || null, tags || [], bio || null, seeking || []]
+      `INSERT INTO professors (name, university, department, category, email, username, password_hash, title, tags, bio, seeking, email_verified)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       RETURNING id, name, university, department, category, email, username, title, tags, bio, seeking, email_verified`,
+      [name, university, department || null, category, email, username, passwordHash, title || null, tags || [], bio || null, seeking || [], emailVerified]
     );
 
     const professor = result.rows[0];
-    professor.email_verified = await ensureAutoVerified(professor.id);
     const token = jwt.sign({ professorId: professor.id }, process.env.JWT_SECRET, { expiresIn: "30d" });
 
     res.status(201).json({ professor, token });

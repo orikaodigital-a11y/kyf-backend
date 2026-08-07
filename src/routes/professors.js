@@ -7,7 +7,8 @@ const { requireAuth } = require("../middleware/auth");
 const { chargeWallet, consumeCreditOrCharge } = require("../lib/payments");
 const { uploadFile } = require("../lib/storage");
 const { getPriceAmount } = require("../lib/pricing");
-const { ensureAutoVerified, requireVerified } = require("../lib/verification");
+const { ensureAutoVerified, requireVerified, isInstitutionalEmail } = require("../lib/verification");
+const { issueEmailOtp, checkEmailOtp } = require("../lib/emailOtp");
 const { sendExpoPushNotifications } = require("../lib/expoPush");
 const { createNotification } = require("../lib/notifications");
 
@@ -58,10 +59,9 @@ router.put("/me", requireAuth, async (req, res) => {
   }
 });
 
-// PUT /professors/me/email — Body: { email }. Lets a professor switch to an
-// institutional address later even if they signed up with a personal one -
-// re-runs the auto-verify check right after, since that's the whole point.
-router.put("/me/email", requireAuth, async (req, res) => {
+// POST /professors/me/email/send-otp — Body: { email }. Sends a code to
+// prove the professor actually owns this inbox before we let them switch to it.
+router.post("/me/email/send-otp", requireAuth, async (req, res) => {
   const email = (req.body.email || "").trim();
   if (!email || !email.includes("@")) {
     return res.status(400).json({ error: "Enter a valid email address." });
@@ -71,8 +71,38 @@ router.put("/me/email", requireAuth, async (req, res) => {
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: "That email is already in use by another account." });
     }
-    await pool.query("UPDATE professors SET email = $1 WHERE id = $2", [email, req.professorId]);
-    const verified = await ensureAutoVerified(req.professorId);
+    await issueEmailOtp(email);
+    res.json({ sent: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Could not send that verification email. Try again in a moment." });
+  }
+});
+
+// PUT /professors/me/email — Body: { email, code }. Lets a professor switch
+// to an institutional address later even if they signed up with a personal
+// one - the code must match what was just emailed to that address.
+router.put("/me/email", requireAuth, async (req, res) => {
+  const email = (req.body.email || "").trim();
+  const code = req.body.code;
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Enter a valid email address." });
+  }
+  if (!code) {
+    return res.status(400).json({ error: "Enter the code we emailed you." });
+  }
+  try {
+    const ok = await checkEmailOtp(email, code);
+    if (!ok) return res.status(400).json({ error: "That code is incorrect or has expired." });
+
+    const existing = await pool.query("SELECT id FROM professors WHERE email = $1 AND id != $2", [email, req.professorId]);
+    if (existing.rows.length > 0) {
+      return res.status(409).json({ error: "That email is already in use by another account." });
+    }
+    // OTP proves ownership; only mark verified if it's also institutional -
+    // a verified personal email still goes through manual review to unlock Discover/Feed.
+    const verified = isInstitutionalEmail(email);
+    await pool.query("UPDATE professors SET email = $1, email_verified = $2 WHERE id = $3", [email, verified, req.professorId]);
     res.json({ email, email_verified: verified });
   } catch (err) {
     console.error(err);

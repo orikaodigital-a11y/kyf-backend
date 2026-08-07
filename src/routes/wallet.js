@@ -3,7 +3,7 @@ const express = require("express");
 const crypto = require("crypto");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
-const { getWallet, creditWallet } = require("../lib/payments");
+const { getWallet, creditWallet, getCredits } = require("../lib/payments");
 const { getRazorpay } = require("../lib/razorpay");
 
 const router = express.Router();
@@ -72,6 +72,17 @@ router.get("/transactions", requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Something went wrong loading your wallet." });
+  }
+});
+
+// GET /wallet/credits — bundle credits remaining per feature, e.g. { priority_connect: 3 }
+router.get("/credits", requireAuth, async (req, res) => {
+  try {
+    const credits = await getCredits(req.professorId);
+    res.json(credits);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading your credits." });
   }
 });
 

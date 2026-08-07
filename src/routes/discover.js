@@ -3,10 +3,11 @@
 const express = require("express");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
-const { chargeWallet } = require("../lib/payments");
+const { chargeWallet, consumeCreditOrCharge, getWallet } = require("../lib/payments");
 const { getPriceAmount } = require("../lib/pricing");
 const { sendExpoPushNotifications } = require("../lib/expoPush");
 const { createNotification } = require("../lib/notifications");
+const { requireVerified } = require("../lib/verification");
 
 const router = express.Router();
 
@@ -109,7 +110,7 @@ async function likeAndMaybeMatch(fromId, toId) {
 // GET /discover — professors you haven't already liked or passed on, newest accounts first.
 // This is a simple version; we'll add Collab Score ranking as its own pass later,
 // once basic browsing works end to end.
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, requireVerified, async (req, res) => {
   try {
     const myLoc = await getMyLocation(req.professorId);
     const result = await pool.query(
@@ -141,7 +142,7 @@ router.get("/", requireAuth, async (req, res) => {
 
 // GET /discover/new-joinees — recently joined professors, for the "New to
 // the network" carousel. Same block-list exclusion as the main deck.
-router.get("/new-joinees", requireAuth, async (req, res) => {
+router.get("/new-joinees", requireAuth, requireVerified, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, name, university, category, photo_url, created_at
@@ -196,14 +197,15 @@ router.post("/priority/:professorId", requireAuth, async (req, res) => {
   try {
     let balance;
     try {
-      const price = await getPriceAmount("priority_connect");
-      const charge = await chargeWallet(
-        fromId,
-        price,
-        "priority_connect",
-        `Priority Connect to professor ${toId}`
-      );
-      balance = charge.balance;
+      const detail = `Priority Connect to professor ${toId}`;
+      const credit = await consumeCreditOrCharge(fromId, "priority_connect", "priority_connect", detail);
+      if (!credit.usedCredit) {
+        const price = await getPriceAmount("priority_connect");
+        const charge = await chargeWallet(fromId, price, "priority_connect", detail);
+        balance = charge.balance;
+      } else {
+        balance = await getWallet(fromId);
+      }
     } catch (err) {
       if (err.code === "INSUFFICIENT_FUNDS") {
         return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });
@@ -266,7 +268,7 @@ router.post("/pass/:professorId", requireAuth, async (req, res) => {
 });
 // GET /discover/interested — people who liked you but you haven't liked back yet
 // (once you like them back, they move to Matches instead of showing here)
-router.get("/interested", requireAuth, async (req, res) => {
+router.get("/interested", requireAuth, requireVerified, async (req, res) => {
   const myId = req.professorId;
 
   try {

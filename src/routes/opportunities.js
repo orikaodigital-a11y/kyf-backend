@@ -3,7 +3,7 @@
 const express = require("express");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
-const { chargeWallet } = require("../lib/payments");
+const { chargeWallet, consumeCreditOrCharge } = require("../lib/payments");
 const { getPriceAmount } = require("../lib/pricing");
 const { requireVerified } = require("../lib/verification");
 
@@ -38,8 +38,11 @@ router.post("/", requireAuth, requireVerified, async (req, res) => {
 
   try {
     try {
-      const price = await getPriceAmount("opportunity_post");
-      await chargeWallet(req.professorId, price, "opportunity_post", title);
+      const credit = await consumeCreditOrCharge(req.professorId, "opportunity_post", "opportunity_post", title);
+      if (!credit.usedCredit) {
+        const price = await getPriceAmount("opportunity_post");
+        await chargeWallet(req.professorId, price, "opportunity_post", title);
+      }
     } catch (err) {
       if (err.code === "INSUFFICIENT_FUNDS") {
         return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });

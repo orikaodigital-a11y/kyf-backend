@@ -2,11 +2,12 @@
 const express = require("express");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
+const { requireVerified } = require("../lib/verification");
 
 const router = express.Router();
 
 // GET /matches — everyone you've matched with, most recent first.
-router.get("/", requireAuth, async (req, res) => {
+router.get("/", requireAuth, requireVerified, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT m.id AS match_id, m.matched_at,

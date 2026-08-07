@@ -4,10 +4,10 @@ const express = require("express");
 const multer = require("multer");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
-const { chargeWallet } = require("../lib/payments");
+const { chargeWallet, consumeCreditOrCharge } = require("../lib/payments");
 const { uploadFile } = require("../lib/storage");
 const { getPriceAmount } = require("../lib/pricing");
-const { ensureAutoVerified } = require("../lib/verification");
+const { ensureAutoVerified, requireVerified } = require("../lib/verification");
 const { sendExpoPushNotifications } = require("../lib/expoPush");
 const { createNotification } = require("../lib/notifications");
 
@@ -84,8 +84,12 @@ router.put("/me/email", requireAuth, async (req, res) => {
 router.post("/me/featured", requireAuth, async (req, res) => {
   try {
     try {
-      const price = await getPriceAmount("featured_profile");
-      await chargeWallet(req.professorId, price, "featured_profile", "Featured Profile - 30 days");
+      const detail = "Featured Profile - 30 days";
+      const credit = await consumeCreditOrCharge(req.professorId, "featured_profile", "featured_profile", detail);
+      if (!credit.usedCredit) {
+        const price = await getPriceAmount("featured_profile");
+        await chargeWallet(req.professorId, price, "featured_profile", detail);
+      }
     } catch (err) {
       if (err.code === "INSUFFICIENT_FUNDS") {
         return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });
@@ -284,7 +288,7 @@ router.post("/me/orcid-sync", requireAuth, async (req, res) => {
 });
 
 // GET /professors/search?q= — name, university, department, or tag match.
-router.get("/search", requireAuth, async (req, res) => {
+router.get("/search", requireAuth, requireVerified, async (req, res) => {
   const q = (req.query.q || "").trim();
   if (!q) return res.json([]);
 
@@ -330,7 +334,7 @@ router.get("/:id/status", async (req, res) => {
 
 
 // GET /professors/:id — public profile view (no email, no password)
-router.get("/:id", async (req, res) => {
+router.get("/:id", requireAuth, requireVerified, async (req, res) => {
   try {
     const result = await pool.query(
       "SELECT id, name, university, department, category, username, email_verified, bio, tags, seeking, title, photo_url FROM professors WHERE id = $1",

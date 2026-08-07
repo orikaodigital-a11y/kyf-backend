@@ -69,6 +69,63 @@ async function creditWallet(professorId, amountPaise, type, detail, razorpayPaym
   }
 }
 
+// If the professor has a bundle credit for this feature, consumes one and
+// logs a zero-amount transaction instead of touching the wallet. Returns
+// { usedCredit: true, transaction } or { usedCredit: false } - callers fall
+// through to chargeWallet() when usedCredit is false.
+async function consumeCreditOrCharge(professorId, feature, type, detail) {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const creditRes = await client.query(
+      "SELECT remaining FROM feature_credits WHERE professor_id = $1 AND feature = $2 FOR UPDATE",
+      [professorId, feature]
+    );
+    if (creditRes.rows.length === 0 || creditRes.rows[0].remaining <= 0) {
+      await client.query("COMMIT");
+      return { usedCredit: false };
+    }
+    await client.query(
+      "UPDATE feature_credits SET remaining = remaining - 1 WHERE professor_id = $1 AND feature = $2",
+      [professorId, feature]
+    );
+    const txn = await client.query(
+      `INSERT INTO transactions (professor_id, type, amount_paise, status, detail)
+       VALUES ($1, $2, 0, 'completed', $3) RETURNING *`,
+      [professorId, type, `${detail || ""} (used bundle credit)`.trim()]
+    );
+    await client.query("COMMIT");
+    return { usedCredit: true, transaction: txn.rows[0] };
+  } catch (err) {
+    try { await client.query("ROLLBACK"); } catch (_) {}
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// Buys a bundle: charges the wallet, then adds `qty` credits for `feature`.
+async function purchaseBundle(professorId, feature, qty, pricePaise, detail) {
+  const { balance, transaction } = await chargeWallet(professorId, pricePaise, "bundle_purchase", detail);
+  await pool.query(
+    `INSERT INTO feature_credits (professor_id, feature, remaining) VALUES ($1, $2, $3)
+     ON CONFLICT (professor_id, feature) DO UPDATE SET remaining = feature_credits.remaining + $3`,
+    [professorId, feature, qty]
+  );
+  const creditsRes = await pool.query(
+    "SELECT remaining FROM feature_credits WHERE professor_id = $1 AND feature = $2",
+    [professorId, feature]
+  );
+  return { balance, transaction, remaining: creditsRes.rows[0].remaining };
+}
+
+async function getCredits(professorId) {
+  const result = await pool.query("SELECT feature, remaining FROM feature_credits WHERE professor_id = $1", [professorId]);
+  const map = {};
+  result.rows.forEach((r) => { map[r.feature] = r.remaining; });
+  return map;
+}
+
 // Marks a held transaction (e.g. a sponsored ad awaiting approval) as completed or refunded.
 async function resolveHeldTransaction(transactionId, professorId, outcome) {
   const client = await pool.connect();
@@ -99,4 +156,7 @@ async function resolveHeldTransaction(transactionId, professorId, outcome) {
   }
 }
 
-module.exports = { getWallet, chargeWallet, creditWallet, resolveHeldTransaction };
+module.exports = {
+  getWallet, chargeWallet, creditWallet, resolveHeldTransaction,
+  consumeCreditOrCharge, purchaseBundle, getCredits,
+};

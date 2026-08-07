@@ -2,7 +2,7 @@ const express = require("express");
 const multer = require("multer");
 const pool = require("../db");
 const { requireAuth } = require("../middleware/auth");
-const { chargeWallet } = require("../lib/payments");
+const { chargeWallet, consumeCreditOrCharge } = require("../lib/payments");
 const { getPriceAmount } = require("../lib/pricing");
 const { uploadFile } = require("../lib/storage");
 const { ensureAutoVerified, requireVerified } = require("../lib/verification");
@@ -161,8 +161,12 @@ router.post("/:id/boost", requireAuth, async (req, res) => {
     }
 
     try {
-      const price = await getPriceAmount("post_boost");
-      await chargeWallet(req.professorId, price, "post_boost", `Boost for post ${req.params.id}`);
+      const detail = `Boost for post ${req.params.id}`;
+      const credit = await consumeCreditOrCharge(req.professorId, "post_boost", "post_boost", detail);
+      if (!credit.usedCredit) {
+        const price = await getPriceAmount("post_boost");
+        await chargeWallet(req.professorId, price, "post_boost", detail);
+      }
     } catch (err) {
       if (err.code === "INSUFFICIENT_FUNDS") {
         return res.status(402).json({ error: "Not enough wallet balance. Add money to your wallet first." });

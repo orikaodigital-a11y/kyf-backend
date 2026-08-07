@@ -22,6 +22,7 @@ const sponsoredAdsRoutes = require("./routes/sponsoredAds");
 const verificationRequestsRoutes = require("./routes/verificationRequests");
 const notificationsRoutes = require("./routes/notifications");
 const bundleOffersRoutes = require("./routes/bundleOffers");
+const publicRoutes = require("./routes/public");
 
 const app = express();
 app.use(cors()); // lets the app (running on a different address) talk to this server
@@ -51,6 +52,7 @@ app.use("/sponsored-ads", sponsoredAdsRoutes);
 app.use("/verification-requests", verificationRequestsRoutes);
 app.use("/notifications", notificationsRoutes);
 app.use("/bundle-offers", bundleOffersRoutes);
+app.use("/public", publicRoutes);
 
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {

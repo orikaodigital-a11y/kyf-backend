@@ -592,4 +592,15 @@ router.patch("/welcome-notification", requireAdminAuth, async (req, res) => {
   }
 });
 
+// ---------------- iOS Waitlist (from the marketing website) ----------------
+router.get("/ios-waitlist", requireAdminAuth, async (req, res) => {
+  try {
+    const result = await pool.query("SELECT * FROM ios_waitlist ORDER BY created_at DESC");
+    res.json({ count: result.rows.length, signups: result.rows });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong loading the iOS waitlist." });
+  }
+});
+
 module.exports = router;

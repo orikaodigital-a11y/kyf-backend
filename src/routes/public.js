@@ -19,6 +19,36 @@ router.get("/android-download-url", async (req, res) => {
   }
 });
 
+// GET /public/android-waitlist/count
+router.get("/android-waitlist/count", async (req, res) => {
+  try {
+    const result = await pool.query("SELECT COUNT(*) AS total FROM android_waitlist");
+    res.json({ count: Number(result.rows[0].total) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong." });
+  }
+});
+
+// POST /public/android-waitlist — Body: { email }
+router.post("/android-waitlist", async (req, res) => {
+  const email = (req.body.email || "").trim().toLowerCase();
+  if (!email || !email.includes("@")) {
+    return res.status(400).json({ error: "Enter a valid email address." });
+  }
+  try {
+    await pool.query(
+      "INSERT INTO android_waitlist (email) VALUES ($1) ON CONFLICT (email) DO NOTHING",
+      [email]
+    );
+    const result = await pool.query("SELECT COUNT(*) AS total FROM android_waitlist");
+    res.status(201).json({ count: Number(result.rows[0].total) });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Something went wrong joining the waitlist." });
+  }
+});
+
 // GET /public/ios-waitlist/count
 router.get("/ios-waitlist/count", async (req, res) => {
   try {
